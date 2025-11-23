@@ -1,18 +1,21 @@
 #![allow(clippy::missing_transmute_annotations)]
 
-use std::ffi::CString;
+use std::ffi::{c_void, CString};
 use std::process::ExitCode;
 
 use windows::Win32::Foundation::{CloseHandle, GetLastError, HANDLE};
+use windows::Win32::Security::{GetTokenInformation, TOKEN_ELEVATION, TOKEN_QUERY, TokenElevation};
 use windows::Win32::System::Diagnostics::Debug::WriteProcessMemory;
 use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
 use windows::Win32::System::Memory::{
     MEM_COMMIT, MEM_RELEASE, MEM_RESERVE, PAGE_READWRITE, VirtualAllocEx, VirtualFreeEx,
 };
 use windows::Win32::System::Threading::{
-    CREATE_SUSPENDED, CreateProcessA, CreateRemoteThread, PROCESS_INFORMATION, ResumeThread,
-    STARTUPINFOA, WaitForSingleObject,
+    CREATE_SUSPENDED, CreateProcessA, CreateRemoteThread, GetCurrentProcess, OpenProcessToken, PROCESS_INFORMATION,
+    ResumeThread, STARTUPINFOA, WaitForSingleObject,
 };
+use windows::Win32::UI::Shell::ShellExecuteA;
+use windows::Win32::UI::WindowsAndMessaging::SW_SHOW;
 use windows::core::{PCSTR, s};
 
 const EXECUTABLES: &[&str] = &[
@@ -24,6 +27,16 @@ const EXECUTABLES: &[&str] = &[
 ];
 
 fn main() -> ExitCode {
+    if !is_admin() {
+        if run_as_admin() {
+            return ExitCode::SUCCESS;
+        } else {
+            eprintln!("Failed to request admin privileges.");
+            let _ = std::io::stdin().read_line(&mut String::new());
+            return ExitCode::FAILURE;
+        }
+    }
+
     let current_dir = std::env::current_dir().unwrap();
 
     // 1. 获取上级目录
@@ -162,5 +175,50 @@ fn inject_standard(h_target: HANDLE, dll_path: &str) -> bool {
         VirtualFreeEx(h_target, dll_path_addr, 0, MEM_RELEASE).unwrap();
         CloseHandle(h_thread).unwrap();
         true
+    }
+}
+
+fn is_admin() -> bool {
+    unsafe {
+        let mut h_token = HANDLE::default();
+        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut h_token).is_err() {
+            return false;
+        }
+
+        let mut elevation = TOKEN_ELEVATION::default();
+        let mut ret_len = 0;
+        let result = GetTokenInformation(
+            h_token,
+            TokenElevation,
+            Some(&mut elevation as *mut _ as *mut c_void),
+            std::mem::size_of::<TOKEN_ELEVATION>() as u32,
+            &mut ret_len,
+        );
+
+        CloseHandle(h_token).ok();
+
+        if result.is_err() {
+            return false;
+        }
+
+        elevation.TokenIsElevated != 0
+    }
+}
+
+fn run_as_admin() -> bool {
+    unsafe {
+        let current_exe = std::env::current_exe().unwrap();
+        let current_exe_str = CString::new(current_exe.to_str().unwrap()).unwrap();
+
+        let result = ShellExecuteA(
+            None,
+            s!("runas"),
+            PCSTR(current_exe_str.as_ptr() as _),
+            None,
+            None,
+            SW_SHOW,
+        );
+
+        (result.0 as isize) > 32
     }
 }
