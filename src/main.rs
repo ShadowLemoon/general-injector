@@ -22,7 +22,6 @@ const EXECUTABLES: &[&str] = &[
     "ZenlessZoneZero.exe",
     "ZenlessZoneZeroBeta.exe"
 ];
-const INJECT_DLL: &str = "yuzuha.dll";
 
 fn main() -> ExitCode {
     let current_dir = std::env::current_dir().unwrap();
@@ -37,16 +36,44 @@ fn main() -> ExitCode {
         }
     };
 
-    // 2. 构建 DLL 的搜索路径 (../yuzuha/)
-    let dll_search_dir = parent_dir.join("yuzuha");
-
-    // 3. 定义 DLL 的完整路径
-    let dll_path = dll_search_dir.join(INJECT_DLL);
-    if !dll_path.is_file() {
-        eprintln!("{INJECT_DLL} not found");
+    // 2. 构建 DLL 的搜索路径 (../plugin/)
+    let dll_search_dir = parent_dir.join("plugin");
+    if !dll_search_dir.is_dir() {
+        eprintln!("Plugin directory not found: {}", dll_search_dir.display());
         let _ = std::io::stdin().read_line(&mut String::new());
         return ExitCode::FAILURE;
     }
+
+    // 3. 搜索唯一的 DLL
+    let dlls: Vec<_> = std::fs::read_dir(&dll_search_dir)
+        .unwrap()
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let path = entry.path();
+            if path.is_file() && path.extension().map_or(false, |ext| ext.eq_ignore_ascii_case("dll")) {
+                Some(path)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    let dll_path = match dlls.len() {
+        0 => {
+            eprintln!("No DLL found in plugin directory.");
+            let _ = std::io::stdin().read_line(&mut String::new());
+            return ExitCode::FAILURE;
+        }
+        1 => dlls[0].clone(),
+        _ => {
+            eprintln!("Multiple DLLs found in plugin directory. Please keep only one.");
+            for dll in dlls {
+                eprintln!(" - {}", dll.display());
+            }
+            let _ = std::io::stdin().read_line(&mut String::new());
+            return ExitCode::FAILURE;
+        }
+    };
 
     for &exe_name in EXECUTABLES {
         if current_dir.join(exe_name).is_file() {
