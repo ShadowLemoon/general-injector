@@ -1,2 +1,2 @@
-# yuzuha-patch
-patch the patch to unleash the power of patches.
+# General injector
+General injector for certain games with single DLL
