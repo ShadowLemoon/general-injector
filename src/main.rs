@@ -15,7 +15,13 @@ use windows::Win32::System::Threading::{
 };
 use windows::core::{PCSTR, s};
 
-const EXECUTABLES: &[&str] = &["ZenlessZoneZero.exe", "ZenlessZoneZeroBeta.exe"];
+const EXECUTABLES: &[&str] = &[
+    "Yuanshen.exe",
+    "GenshinImpact.exe",
+    "StarRail.exe",
+    "ZenlessZoneZero.exe",
+    "ZenlessZoneZeroBeta.exe"
+];
 const INJECT_DLL: &str = "yuzuha.dll";
 
 fn main() -> ExitCode {
